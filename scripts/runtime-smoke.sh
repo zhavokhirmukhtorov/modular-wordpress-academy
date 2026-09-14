@@ -27,7 +27,7 @@ if [ "$ready" -ne 1 ]; then
 fi
 
 wpcli() {
-  docker compose run --rm -T cli "$@"
+  docker compose run --rm -T cli wp "$@"
 }
 
 echo '[INFO] Installing WordPress'
@@ -45,7 +45,7 @@ wpcli plugin activate academy-core
 wpcli plugin activate academy-courses
 wpcli plugin activate academy-progress
 
-student_id="$(wpcli user create student-ci student-ci@example.test --role=student --porcelain)"
+student_id="$(wpcli user create student-ci student-ci@example.test --role=academy_student --porcelain)"
 course_id="$(wpcli post create --post_type=academy_course --post_status=publish --post_title='CI Course' --porcelain)"
 lesson_id="$(wpcli post create --post_type=academy_lesson --post_status=publish --post_title='CI Lesson' --porcelain)"
 
