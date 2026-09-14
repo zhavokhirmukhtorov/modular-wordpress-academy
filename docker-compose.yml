@@ -1,4 +1,4 @@
-# Local development only. Do not reuse these credentials in production.
+# Local development and CI smoke testing only. Do not reuse these credentials in production.
 services:
   db:
     image: mariadb:11.4
@@ -30,6 +30,24 @@ services:
       WORDPRESS_DB_PASSWORD: wordpress
       WORDPRESS_DB_NAME: wordpress
       WORDPRESS_DEBUG: "1"
+    volumes:
+      - wp_data:/var/www/html
+      - ./plugins/academy-core:/var/www/html/wp-content/plugins/academy-core
+      - ./plugins/academy-courses:/var/www/html/wp-content/plugins/academy-courses
+      - ./plugins/academy-progress:/var/www/html/wp-content/plugins/academy-progress
+
+  cli:
+    image: wordpress:cli-php8.3
+    depends_on:
+      db:
+        condition: service_healthy
+      wordpress:
+        condition: service_started
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
     volumes:
       - wp_data:/var/www/html
       - ./plugins/academy-core:/var/www/html/wp-content/plugins/academy-core
