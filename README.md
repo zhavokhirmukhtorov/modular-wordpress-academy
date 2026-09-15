@@ -1,23 +1,49 @@
 # Modular WordPress Academy
 
-A compact **WordPress/PHP backend engineering sample** built to demonstrate modular plugin architecture, REST permissions, custom MySQL tables, WooCommerce-driven enrollment, audit logging, and production-readiness thinking.
+A small backend-focused WordPress project built around three custom plugins: access/enrollment, course content, and progress tracking.
 
-This is deliberately **not a page-builder showcase**. The interesting part is the backend: three custom plugins share business workflows while keeping module boundaries explicit and reviewable.
+I built it to keep the interesting parts visible: plugin boundaries, custom tables, REST permissions, WooCommerce integration, audit events, and the checks I would want before changing a larger existing system. It is intentionally compact, so the important flows can be reviewed without digging through unrelated UI code.
 
-## Reviewer guide — 3 minutes
+> This is a self-directed portfolio project, not a commercial LMS or a claim of production deployment experience.
 
-If you are reviewing this repository as a technical sample, start here:
+## What is in the repository
 
-1. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — module/data boundaries.
-2. [`plugins/academy-core`](plugins/academy-core) — access, roles, audit log, WooCommerce enrollment.
-3. [`plugins/academy-progress/includes/class-academy-progress-rest.php`](plugins/academy-progress/includes/class-academy-progress-rest.php) — protected write flow and business validation.
-4. [`docs/AUDIT_REPORT.md`](docs/AUDIT_REPORT.md) — risks intentionally left visible instead of being presented as “production-ready”.
-5. [`docs/VERIFICATION.md`](docs/VERIFICATION.md) — what has and has not actually been verified.
+### Academy Core
 
-## System overview
+Owns the shared access model and operational logging.
+
+- student/instructor roles and custom capabilities;
+- `wp_academy_access` with a unique user/course constraint;
+- `wp_academy_audit_log` for business-significant events;
+- WooCommerce product-to-course mapping;
+- enrollment when a registered user's order is completed;
+- protected REST endpoint for course access.
+
+### Academy Courses
+
+Owns the content model.
+
+- `academy_course` and `academy_lesson` post types;
+- lesson-to-course relation and lesson order;
+- public course catalog endpoint;
+- protected lesson endpoint for enrolled users/admins;
+- explicit dependency on Academy Core.
+
+### Academy Progress
+
+Owns completion state and a small reporting view.
+
+- `wp_academy_progress` custom table;
+- idempotent writes with a unique `(user_id, lesson_id)` key;
+- protected progress read/write endpoints;
+- validation that a lesson is published and belongs to the requested course;
+- audit event on completion;
+- explicit dependency on Academy Core.
+
+## Architecture at a glance
 
 ```text
-WooCommerce order completed
+WooCommerce completed order
           |
           v
 +----------------------+       +----------------------+
@@ -25,7 +51,7 @@ WooCommerce order completed
 | roles/access/audit   |       +----------------------+
 +----------+-----------+
            |
-           | public access contract
+           | shared access contract
            v
 +----------------------+       +----------------------+
 |   Academy Courses    |------>| WP courses/lessons   |
@@ -47,35 +73,6 @@ WooCommerce order completed
 
 A rendered diagram is available in [`docs/architecture.svg`](docs/architecture.svg).
 
-## Modules
-
-### Academy Core
-
-- student/instructor roles and custom capabilities;
-- `wp_academy_access` table with a unique user/course constraint;
-- `wp_academy_audit_log` for business-significant events;
-- WooCommerce product → course mapping;
-- enrollment after a completed registered-user order;
-- protected access REST endpoint;
-- stable helper contract used by other plugins.
-
-### Academy Courses
-
-- `academy_course` and `academy_lesson` content models;
-- lesson → course relation and ordering;
-- public course catalog endpoint;
-- protected lesson-list endpoint for enrolled users/admins;
-- explicit dependency guard on Academy Core.
-
-### Academy Progress
-
-- `wp_academy_progress` custom table;
-- idempotent completion writes via a unique `(user_id, lesson_id)` key;
-- protected progress REST endpoints;
-- validation that the lesson is published and belongs to the selected course;
-- small admin reporting screen with recent audit events;
-- explicit dependency guard on Academy Core.
-
 ## REST API
 
 ```text
@@ -86,65 +83,76 @@ POST /wp-json/academy/v1/progress/complete
 GET  /wp-json/academy/v1/progress/{course_id}
 ```
 
-See [`docs/API.md`](docs/API.md) for permissions, payloads, and error behavior.
+See [`docs/API.md`](docs/API.md) for permissions and payload details.
 
-## Engineering controls demonstrated
+## Controls I wanted to make explicit
 
-- server-side capability/authentication checks on protected endpoints;
-- WooCommerce admin write protected by capability + nonce;
-- `$wpdb->prepare()` for request-derived SQL values;
-- unique database constraints for idempotent access/progress writes;
-- validation of lesson publication state and lesson/course relationship;
-- escaped admin output;
-- audit trail for enrollment/progress events;
-- plugin-to-plugin communication through stable helpers/actions instead of reaching into internals;
-- documented release/rollback process rather than direct production editing.
+- authentication/capability checks on protected endpoints;
+- capability + nonce protection on the WooCommerce admin write path;
+- prepared SQL for request-derived values;
+- unique constraints for idempotent access/progress writes;
+- validation of lesson type, publication state, and course relation;
+- escaping on admin output;
+- audit events for enrollment and lesson completion;
+- plugin-to-plugin communication through helpers/actions instead of reaching into private internals.
 
 ## Verification
 
-Run:
+There are two GitHub Actions workflows.
+
+**Static verification** runs the repository checks on PHP **8.0, 8.1, 8.2, 8.3 and 8.4**. It includes PHP syntax checks and a small set of guards around REST permissions, nonce/capability checks, database constraints, validation, and plugin dependencies.
+
+**Runtime smoke test** starts a fresh MariaDB + WordPress environment, installs WooCommerce, activates all three Academy plugins, creates test data, completes a WooCommerce order, and verifies the critical path end to end:
+
+```text
+WordPress install
+→ WooCommerce activation
+→ Academy plugin activation
+→ completed order
+→ course access granted
+→ protected REST access
+→ progress write/read
+→ audit log entry
+```
+
+The current `main` branch passes both workflows. See [`docs/VERIFICATION.md`](docs/VERIFICATION.md) for the exact evidence boundary.
+
+Local static check:
 
 ```bash
 bash scripts/verify.sh
 ```
 
-The repository has passed PHP syntax checks and repository guard checks in the current development environment. That **does not mean the project is claimed as production-verified**.
-
-Runtime WordPress/WooCommerce validation remains explicitly listed in [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) and [`docs/VERIFICATION.md`](docs/VERIFICATION.md).
-
-## Local setup — no paid infrastructure required
-
-### Option A — LocalWP
-
-1. Create a clean local WordPress site.
-2. Copy the three directories from `plugins/` into `wp-content/plugins/`.
-3. Activate plugins in this order: **Academy Core → Academy Courses → Academy Progress**.
-4. Optionally install the free WooCommerce plugin to test enrollment.
-5. Follow [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md).
-
-### Option B — Docker
-
-For local development only:
+Runtime check (requires Docker):
 
 ```bash
-docker compose up -d
+bash scripts/runtime-smoke.sh
 ```
 
-WordPress is exposed on `http://localhost:8080`.
+## What I still do not call “production-verified”
 
-The credentials in `docker-compose.yml` are intentionally local-development defaults and must not be reused in production.
+A green smoke test is useful evidence, but it is not a substitute for production validation. This project still does not claim:
+
+- load/performance numbers under realistic traffic;
+- cross-browser/admin UX coverage across WordPress versions;
+- backup/restore evidence;
+- production monitoring and alerting;
+- a full WordPress/WooCommerce integration test suite;
+- deactivation/uninstall and long-running operational behavior.
+
+The prioritized gaps are documented in [`docs/AUDIT_REPORT.md`](docs/AUDIT_REPORT.md).
 
 ## Documentation
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — boundaries and data model.
-- [`docs/API.md`](docs/API.md) — REST contract.
-- [`docs/AUDIT_REPORT.md`](docs/AUDIT_REPORT.md) — prioritized technical findings.
-- [`docs/SAMPLE_AUDIT_RU.md`](docs/SAMPLE_AUDIT_RU.md) — the same audit style in Russian.
-- [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) — runtime acceptance scenarios.
-- [`docs/RUNBOOK.md`](docs/RUNBOOK.md) — release and rollback procedure.
-- [`docs/VERIFICATION.md`](docs/VERIFICATION.md) — evidence boundary: verified vs. not yet verified.
-- [`SECURITY.md`](SECURITY.md) — implemented and remaining security controls.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - module/data boundaries
+- [`docs/API.md`](docs/API.md) - REST contract
+- [`docs/AUDIT_REPORT.md`](docs/AUDIT_REPORT.md) - prioritized findings
+- [`docs/SAMPLE_AUDIT_RU.md`](docs/SAMPLE_AUDIT_RU.md) - audit example in Russian
+- [`docs/TEST_PLAN.md`](docs/TEST_PLAN.md) - runtime scenarios
+- [`docs/RUNBOOK.md`](docs/RUNBOOK.md) - release/rollback notes
+- [`docs/VERIFICATION.md`](docs/VERIFICATION.md) - what is verified and what is not
+- [`SECURITY.md`](SECURITY.md) - implemented and remaining security controls
 
-## Scope statement
+## Scope
 
-This is a **self-directed portfolio engineering project**, not a commercial LMS claim and not a replacement for LearnDash/BuddyBoss. Its purpose is to demonstrate how I approach a WordPress/PHP system with multiple custom modules: understand boundaries, trace business-critical flows, review database/API/security behavior, make incremental changes, and keep production risks explicit.
+This repository is deliberately small. The goal is not to imitate a full LMS feature set; it is to show how I structure and verify backend changes in a modular WordPress/PHP system: understand ownership and dependencies, protect write paths, keep data rules explicit, test the critical business flow, and document what remains uncertain.
