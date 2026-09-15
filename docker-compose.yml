@@ -38,12 +38,14 @@ services:
 
   cli:
     image: wordpress:cli-php8.3
+    user: "33:33"
     depends_on:
       db:
         condition: service_healthy
       wordpress:
         condition: service_started
     environment:
+      HOME: /tmp
       WORDPRESS_DB_HOST: db:3306
       WORDPRESS_DB_USER: wordpress
       WORDPRESS_DB_PASSWORD: wordpress
